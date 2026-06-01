@@ -151,19 +151,12 @@ func stableSecurityEventID(alertType, logicalKey string) string {
 	_, _ = h.Write([]byte(alertType))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(logicalKey))
-	suffix := h.Sum32() % 100000
+	hash := fmt.Sprintf("%06x", h.Sum32()%0x1000000)[:6]
 
-	var prefix string
-	var number int
-	switch alertType {
-	case "certificate_expiring":
-		prefix, number = "t", 106
-	case "certificate_check_error":
-		prefix, number = "t", 107
-	default:
-		prefix, number = "x", 999
-	}
-	return fmt.Sprintf("%s%d%05d", prefix, number, suffix)
+	now := time.Now()
+	timeStr := now.Format("200601021504")
+
+	return fmt.Sprintf("%s_reminder_%s_%s_1", alertType, timeStr, hash)
 }
 
 func stableEventKey(parts ...string) string {

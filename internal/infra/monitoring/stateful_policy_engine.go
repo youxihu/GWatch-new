@@ -49,11 +49,11 @@ func (p *StatefulPolicy) applyInternal(cfg *shared.Config, metrics *entity.Syste
 		thresholdConfig := GetThresholdConfig(cfg, alertType)
 		if !thresholdConfig.HasConfig {
 			// 没有配置的告警类型（如错误类型），直接触发
-			eventID, err := p.eventIDGenerator.GenerateUniqueEventID(string(alertType), 3)
+			eventID, err := p.eventIDGenerator.GenerateUniqueEventID(string(alertType), "reminder", 3)
 			if err != nil {
 				// 如果生成唯一ID失败，回退到普通生成方法
 				logger.Warnf("生成唯一事件ID失败: %v，回退到普通生成方法", err)
-				eventID = p.eventIDGenerator.GenerateEventID(string(alertType))
+				eventID = p.eventIDGenerator.GenerateEventID(string(alertType), "reminder")
 			}
 			alertKey := eventID
 			lastAlert, hasLastAlert := p.lastAlertTimes[alertKey]
@@ -572,11 +572,11 @@ func (p *StatefulPolicy) applyInternal(cfg *shared.Config, metrics *entity.Syste
 				} else {
 					// 生成新的事件ID（带冲突检测）
 					var err error
-					eventID, err = p.eventIDGenerator.GenerateUniqueEventID(string(alertType), 3)
+					eventID, err = p.eventIDGenerator.GenerateUniqueEventID(string(alertType), severity, 3)
 					if err != nil {
 						// 如果生成唯一ID失败，回退到普通生成方法
 						logger.Warnf("生成唯一事件ID失败: %v，回退到普通生成方法", err)
-						eventID = p.eventIDGenerator.GenerateEventID(string(alertType))
+						eventID = p.eventIDGenerator.GenerateEventID(string(alertType), severity)
 					}
 					logger.Debugf("%s 生成新事件ID: %s (进程名: %s)", alertType, eventID, processName)
 				}
