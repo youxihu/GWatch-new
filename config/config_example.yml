@@ -1,0 +1,358 @@
+# ============================================
+# GWatch 企业级服务器监控系统 - 配置文件模板
+# ============================================
+# 使用说明：
+# 1. 复制此文件为 config.yml
+# 2. 根据实际情况修改以下必填项：
+#    - dingtalk.webhook_url: 钉钉机器人Webhook地址
+#    - redis_connection.addr: Redis地址（用于告警状态存储）
+#    - host_monitoring.alert_title: 告警标题（用于标识服务器）
+# 3. 其他配置项可根据需要调整，都有详细注释说明
+
+# ============================================
+# 全局告警策略配置
+# ============================================
+alerting:
+  # 告警事件生命周期控制
+  event:
+    retention_hours: 24       # 告警事件状态在内存/Redis中保留时间（小时）
+                              # 用于恢复匹配，超过此时间的告警状态会被清理
+    id_template: "{metric}_{host}_{timestamp}"  # 事件ID生成模板
+                              # 占位符：{metric}告警类型, {host}主机标识, {timestamp}时间戳
+
+  # 防抖与触发机制
+  trigger:
+    alert_interval: 30m           # 告警防抖间隔（分钟）
+                                  # 同一告警类型在N分钟内只发送一次通知，避免刷屏
+    duration_required: 2m          # 统一持续时间要求（所有告警级别都必须满足）
+                                  # 告警必须持续超过此时间才会发送通知
+                                  # 格式：数字+单位（s秒/m分钟/h小时），如：30s, 2m, 1h
+    recovery_duration_required: 2m # 恢复通知持续时间要求
+                                  # 告警恢复正常后，必须持续超过此时间才发送恢复通知
+                                  # 格式同上
+
+  # 告警等级定义（所有监控项复用）
+  severity_levels:
+    p1:  # 紧急级别
+      notify_immediately: false   # 是否立即通知（跳过防抖检查）
+                                  # true: 达到持续时间后立即发送，不等待防抖窗口
+                                  # false: 达到持续时间后仍需等待防抖窗口结束
+    p2:  # 严重级别
+      notify_immediately: false
+    p3:  # 警告级别
+      notify_immediately: false
+    reminder:  # 提醒级别
+      notify_immediately: false
+
+# ============================================
+# 主机监控配置
+# ============================================
+host_monitoring:
+  enabled: true                  # 是否启用主机监控
+                                 # false: 不监控CPU、内存、磁盘、网络
+  collect_interval: 3s           # 监控数据采集间隔
+                                 # 建议：3-10秒，太短会增加系统负载
+  alert_title: "服务器监控"       # 告警标题（必填）
+                                 # 用于标识服务器，会显示在告警通知中
+                                 # 建议使用：服务器名称、IP地址或业务标识
+
+  # 告警日志存储配置（可选）
+  alert_log:
+    enabled: true                # 是否启用告警日志存储
+                                 # true: 告警和恢复信息会保存到文件
+                                 # false: 不保存日志文件
+    log_path_template: "logs/alert/%y/%m-%d/{event_id}/alert.md"
+                                 # 告警日志路径模板
+                                 # 占位符：
+                                 #   %y: 年份, %m: 月份, %d: 日期
+                                 #   %H: 小时, %M: 分钟, %S: 秒
+                                 #   {event_id}: 事件ID
+    retention_days: 30           # 日志文件保留天数
+                                 # 超过此天数的日志文件会被自动清理
+
+  # 监控阈值配置
+  thresholds:
+    cpu:
+      enabled: true              # 是否启用CPU监控
+      base: 80.0                 # 基础阈值（用于reminder级别）
+                                 # CPU使用率超过此值触发reminder级别告警
+      levels:
+        p3: 80.0                 # P3级别阈值（警告）
+        p2: 90.0                 # P2级别阈值（严重）
+        p1: 95.0                 # P1级别阈值（紧急）
+
+    memory:
+      enabled: true              # 是否启用内存监控
+      base: 70.0                 # 基础阈值（用于reminder级别）
+      levels:
+        p3: 70.0                 # P3级别阈值
+        p2: 85.0                 # P2级别阈值
+        p1: 95.0                 # P1级别阈值
+
+    disk:
+      enabled: true              # 是否启用磁盘监控
+      base: 80.0                 # 基础阈值（用于reminder级别）
+                                 # 磁盘告警时会自动识别并列出占用最大的前3个目录或文件
+      levels:
+        p3: 80.0                 # P3级别阈值
+        p2: 90.0                 # P2级别阈值
+        p1: 95.0                 # P1级别阈值
+
+  # 磁盘使用率扫描配置（可选）
+  disk_usage_scan:
+    enabled: true                # 是否启用递归扫描
+                                 # true: 使用递归扫描深入查找真正的磁盘占用热点
+                                 # false: 使用基础扫描（仅扫描根目录一级）
+    timeout: 30s                 # 扫描超时时间
+                                 # 超过此时间会停止扫描并返回已收集的结果
+                                 # 建议：20-60秒
+    max_results: 5               # 最大返回结果数量
+                                 # 返回占用最大的前N个目录或文件
+    min_size_threshold: 10485760 # 最小文件大小阈值（字节）
+                                 # 小于此大小的文件/目录不会被包含在结果中
+                                 # 10485760 = 10MB
+    recursive_threshold: 0.7     # 递归阈值（0.0-1.0）
+                                 # 子目录占父目录比例超过此值才会深入扫描
+                                 # 0.7 = 70%，建议范围：0.5-0.8
+    max_depth: 10                # 最大递归深度
+                                 # 限制扫描的目录层级，避免过深扫描
+    distribution_threshold: 0.3  # 分布均匀度阈值（0.0-1.0）
+                                 # 最大子项占比小于此值时停止递归
+                                 # 0.3 = 30%，用于判断目录内容是否分布均匀
+    
+    # 性能优化配置（可选）
+    performance:
+      max_concurrency: 4         # 最大并发数
+                                 # 0表示使用CPU核心数，建议：2-8
+      enable_resource_monitor: true  # 是否启用资源监控
+                                 # true: 监控内存使用，超限时停止扫描
+                                 # false: 不监控资源使用
+      max_memory_mb: 512.0       # 内存使用限制（MB）
+                                 # 扫描过程中内存使用超过此值会停止扫描
+      resource_check_interval: 1s   # 资源检查间隔
+                                 # 多久检查一次内存使用情况
+      max_files_per_directory: 10000  # 单个目录最大扫描文件数
+                                 # 限制单个目录扫描的文件数量，避免过度消耗资源
+      batch_size: 100            # 批处理大小
+                                 # 每次处理的文件数量，用于优化内存使用
+
+# ============================================
+# 公共Redis连接配置
+# ============================================
+# 用于告警状态存储和恢复通知
+# 如果app_monitoring或scheduled_push未配置Redis连接，会使用此配置
+redis_connection:
+  addr: "localhost:6379"         # Redis地址（必填）
+                                 # 格式：IP:端口，如：192.168.1.100:6379
+  password: ""                   # Redis密码（如有）
+                                 # 如果Redis没有密码，留空即可
+  db: 0                          # Redis数据库编号
+                                 # 建议使用独立的DB，避免与其他应用冲突
+  timeout: 5s                    # 连接超时时间
+  pool_size: 5                   # 连接池大小
+  min_idle_conns: 1              # 最小空闲连接数
+  max_idle_conns: 3              # 最大空闲连接数
+
+# ============================================
+# 应用层监控配置
+# ============================================
+app_monitoring:
+  enabled: true                  # 是否启用应用层监控
+                                 # false: 不监控Redis、HTTP接口
+
+  redis:
+    enabled: true                # 是否启用Redis监控
+                                 # false: 不监控Redis连接数
+    # 如果未配置连接信息，则使用公共redis_connection配置
+    # addr: "localhost:6379"     # Redis地址（可选）
+    # password: ""               # Redis密码（可选）
+    # db: 0                      # Redis数据库编号（可选）
+    thresholds:
+      clients:
+        enabled: true            # 是否启用客户端连接数监控
+        min: 1                   # 最小连接数阈值
+                                 # 连接数 < min 时触发RedisLow告警（p2级别）
+        max: 20                  # 最大连接数阈值
+                                 # 连接数 > max 时触发RedisHigh告警（p2级别）
+                                 # 连接数在[min, max]区间内为正常，不告警
+                                 # 
+                                 # Redis告警说明：
+                                 # - Redis告警使用区间判断，不使用base和levels配置
+                                 # - RedisLow：连接数 < min 时触发p2级别告警
+                                 # - RedisHigh：连接数 > max 时触发p2级别告警
+                                 # - 连接数在[min, max]区间内为正常，不告警且会触发恢复通知
+                                 # - 必须持续超过duration_required时间才发送通知（有窗口机制）
+                                 # - 使用Redis存储告警状态，支持恢复通知
+
+# ============================================
+# HTTP接口监控配置
+# ============================================
+http_monitoring:
+  enabled: true                  # 是否启用HTTP接口监控
+                                 # false: 不监控HTTP接口
+                                 # HTTP监控采用独立采集周期，仅在启用时启动
+
+  collect_interval: 10s          # HTTP监控采集间隔
+                                 # 每隔多久检查一次HTTP接口
+                                 # 建议：10-60秒，太短会增加目标服务器负载
+
+  interfaces:
+    # 接口配置列表（可配置多个接口）
+    - name: "API健康检查"          # 接口名称（必填）
+                                 # 用于标识接口，会显示在告警通知中
+      url: "https://api.example.com/health"  # 接口URL（必填）
+                                 # 支持http和https协议
+      need_alert: true           # 是否需要告警（必填）
+                                 # true: 状态码不在allowed_codes中会触发告警
+                                 # false: 不告警，仅记录状态
+      request_timeout: 10s       # 请求超时时间
+                                 # 超过此时间未响应视为超时
+      allowed_codes: [200, 201, 204]  # 允许的HTTP状态码列表（必填）
+                                 # 状态码不在此列表中且need_alert=true时触发告警
+                                 # 如果为空，默认只允许200
+                                 # 
+                                 # HTTP告警说明：
+                                 # - HTTP告警使用p2级别（状态码不在allowed_codes中即为p2）
+                                 # - 状态码不在allowed_codes中且need_alert=true时触发p2级别告警
+                                 # - 必须持续超过duration_required时间才发送通知（有窗口机制）
+                                 # - 使用Redis存储告警状态，支持恢复通知
+                                 # - 恢复条件：状态码回到allowed_codes中
+                                 # - 触发条件显示：HTTP接口 异常 且持续 X（告警）或 HTTP接口 正常（恢复）
+
+    # 可以添加更多接口配置
+    # - name: "另一个接口"
+    #   url: "https://another.example.com/status"
+    #   need_alert: true
+    #   request_timeout: 10s
+    #   allowed_codes: [200]
+
+# ============================================
+# 定时推送配置（分布式架构）
+# ============================================
+scheduled_push:
+  enabled: true                  # 是否启用定时推送
+                                 # false: 不执行定时推送任务
+
+  mode: "server"                 # 运行模式（必填）
+                                 # client: 客户端模式 - 收集数据并上传到Redis，不发送通知
+                                 # server: 服务端模式 - 从Redis聚合所有客户端数据，统一发送报告
+  
+  # Redis连接配置（用于client/server数据交换）
+  # 如果未配置，则使用公共redis_connection配置
+  # rds_url: "localhost:6379"    # Redis地址（可选）
+  # rds_password: ""             # Redis密码（可选）
+  # rds_db: 2                    # Redis数据库编号（可选）
+                                 # 建议使用独立的DB，避免与监控Redis冲突
+  rds_instance_id: ""            # 实例ID（可选）
+                                 # 用于区分不同的实例，留空即可
+
+  push_times: ["8:00", "12:00", "18:00"]  # 推送时间点列表（必填）
+                                 # 格式：["时:分", "时:分", ...]
+                                 # 24小时制，如：["8:00", "12:00", "18:00"]
+                                 # 支持多个时间点
+
+  title: "服务器性能监控定时报告"  # 推送标题（必填）
+  # Client模式：作为客户端标识，用于区分同一机器上的多个客户端
+  # Server模式：作为钉钉通知的标题
+  
+  server_aggregation_delay_seconds: 30  # Server模式聚合延迟时间（秒）
+  # 用于等待所有Client上传完数据后再聚合
+  # 建议30-60秒，确保所有客户端数据都已上传
+                                 # 仅Server模式有效
+  
+  # 数据日志存储配置（可选）
+  data_log:
+    enabled: true                # 是否启用数据日志存储
+                                 # true: 保存客户端数据和服务器报告到文件
+                                 # false: 不保存日志文件
+    client_path_template: "logs/scheduled_push/client/%y/%m-%d/client-%H%M-%S.json"
+    # 客户端数据日志路径模板（Client模式使用）
+                                 # 占位符：%y(年), %m(月), %d(日), %H(时), %M(分), %S(秒)
+    server_path_template: "logs/scheduled_push/server/%y/%m-%d/report-%H%M-%S.md"
+    # 服务器报告日志路径模板（Server模式使用）
+                                 # 格式：Markdown格式
+    retention_days: 30           # 日志文件保留天数
+                                 # 超过此天数的日志文件会被自动清理
+
+# ============================================
+# 钉钉通知配置
+# ============================================
+dingtalk:
+  webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_ACCESS_TOKEN"
+                                 # 钉钉机器人Webhook地址（必填）
+                                 # 获取方式：
+                                 # 1. 在钉钉群中添加自定义机器人
+                                 # 2. 选择"加签"安全设置（推荐）或"自定义关键词"
+                                 # 3. 复制Webhook地址，替换YOUR_ACCESS_TOKEN
+  secret: "YOUR_SECRET"          # 钉钉机器人密钥（如有）
+                                 # 如果选择了"加签"安全设置，需要填写此密钥
+                                 # 如果选择了"自定义关键词"，留空即可
+  # at_mobiles: []              # @的手机号列表（可选）
+                                 # 格式：["13800138000", "13900139000"]
+                                 # 留空或不配置则不@任何人
+                                 # 注意：已禁用@all功能，避免打扰所有人
+
+# ============================================
+# 全局通知开关
+# ============================================
+enable_notification: true       # 全局通知开关（必填）
+                                 # true: 发送钉钉通知（默认）
+                                 # false: 不发送任何钉钉通知
+                                 # 适用于测试环境或仅需要日志记录的场景
+
+# ============================================
+# 日志配置
+# ============================================
+log:
+  mode: both                     # 日志输出模式（必填）
+                                 # console: 仅输出到控制台
+                                 # file: 仅输出到文件
+                                 # both: 同时输出到控制台和文件（推荐）
+  level: info                    # 日志级别（必填）
+                                 # debug: 详细调试信息（开发调试时使用）
+                                 # info: 一般信息（生产环境推荐）
+                                 # warn: 警告信息
+                                 # error: 错误信息
+  output: logs/gwatch.log        # 日志文件路径（file或both模式使用）
+                                 # 相对路径相对于程序运行目录
+  enable_rotation: true          # 是否启用日志轮转
+                                 # true: 自动轮转日志文件，避免文件过大
+                                 # false: 不轮转，日志会一直追加到同一文件
+  max_size: 100                  # 单个日志文件最大大小（MB）
+                                 # 超过此大小会自动轮转
+  max_age: 30                    # 日志文件保留天数
+                                 # 超过此天数的日志文件会被自动清理
+  max_backups: 10                # 最大备份文件数
+                                 # 保留最近N个备份文件
+
+# ============================================
+# 进程白名单配置
+# ============================================
+# 配置在白名单中的进程触发告警时会被忽略，不会发送告警通知
+# 适用于开发工具、系统进程等不需要监控的进程
+white_process_list:
+  - "cursor"                     # Cursor编辑器
+  - "goland"                     # GoLand IDE
+  - "bash"                       # Bash终端
+  - "vim"                        # Vim编辑器
+  # 可以添加更多进程名称
+  # - "java"
+  # - "python"
+
+# ============================================
+# HTTPS证书过期监控配置（可选）
+# ============================================
+certificate_expiration_monitoring:
+  enabled: false                 # 是否启用HTTPS证书过期监控
+  collect_interval: 12h          # 检查间隔
+  alert_title: "HTTPS证书过期提醒"
+  warning_days: 15               # 证书剩余天数小于等于该值时告警
+  domains:
+    - name: "example.com"        # 域名
+      port: 443                  # TLS端口，默认443
+      enabled: true
+  alert_log:
+    enabled: true
+    log_path_template: "logs/certificate_expiration_monitoring/%y/%m-%d/cert-%H%M%S.md"  # 时间占位符支持 %H%M%S 或 %H/%M/%S
+    retention_days: 30
+
