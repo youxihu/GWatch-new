@@ -45,6 +45,7 @@
 - 大文件拆分：StatefulPolicy 936→101+847，metrics 524→309+226，disk_scanner 529→105+432
 - 并发安全：全局 logger 加锁保护，Redis 连接改为实例字段
 - 单文件编译部署，UPX 压缩后 ~3.3MB
+- Docker 支持：`--pid=host --net=host` 读取宿主机指标，`GWATCH_ROOTFS` 环境变量适配容器磁盘路径
 
 ### 配置
 - YAML 配置文件，支持环境变量 `GWATCH_CONFIG`

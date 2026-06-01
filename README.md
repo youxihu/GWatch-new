@@ -32,7 +32,7 @@ GWatch 是 Go 语言开发的通用型服务器监控系统，采用 DDD 三层�
 - 持续时长要求：告警须持续超过阈值一定时间才触发
 - 恢复通知：自动检测恢复并推送恢复通知（本机 → 进程 → 全局三层验证）
 - 状态持久化：Redis 存储告警状态，程序重启后自动恢复活跃告警
-- 事件追踪：每个告警唯一 EventID（前缀+编号+时间戳），完整生命周期追踪
+- 事件追踪：每个告警唯一 EventID，见名知意格式 `{类型}_{等级}_{时间}_{hash}_{次数}`
 
 ### 分布式定时推送
 - Client/Server 双模式：Client 采集数据上传 Redis，Server 聚合所有客户端数据统一推送
@@ -126,6 +126,33 @@ cp config/config_example.yml config/config.yml
 
 环境变量 `GWATCH_CONFIG` 也可指定配置文件路径。
 
+### Docker 部署
+
+```bash
+# 构建镜像
+make build
+docker build -t gwatch:4.0.1 .
+
+# 运行容器
+docker run -d \
+  --name gwatch \
+  --pid=host \
+  --net=host \
+  -v /:/host:ro \
+  -v $(pwd)/config/config.yml:/etc/gwatch/config.yml:ro \
+  -e GWATCH_ROOTFS=/host \
+  gwatch:4.0.1
+```
+
+Docker 参数说明：
+
+| 参数 | 作用 |
+|------|------|
+| `--pid=host` | 共享宿主机 PID 命名空间，使容器内 `/proc` 读取宿主机 CPU/内存/进程/磁盘 IO |
+| `--net=host` | 共享宿主机网络命名空间，使容器内 `/proc/net/dev` 读取宿主机网络流量 |
+| `-v /:/host:ro` | 挂载宿主机根文件系统到 `/host`，用于磁盘使用率采集 |
+| `-e GWATCH_ROOTFS=/host` | 环境变量指定磁盘使用率读取路径为宿主机挂载点 |
+
 ---
 
 ## 告警类型一览
@@ -155,7 +182,7 @@ cp config/config_example.yml config/config.yml
 ```markdown
 ## [告警] CPU使用率过高
 
-- 事件ID: c10100123
+- 事件ID: cpu_high_p1_202606011530_a3f2c1_3
 - 告警等级: 紧急
 - 触发条件: CPU使用率超过阈值 95.0%
 - 触发对象: java(12345)
@@ -168,7 +195,7 @@ cp config/config_example.yml config/config.yml
 ```markdown
 ## [故障恢复] CPU使用率过高
 
-- 事件ID: c10100123
+- 事件ID: cpu_high_p1_202606011530_a3f2c1_3
 - 告警等级: 恢复正常
 - CPU使用率已降至 45.2%
 - 触发时间: 2026-06-01 16:00:00

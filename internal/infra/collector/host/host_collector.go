@@ -89,7 +89,12 @@ func (c *Collector) GetMemoryUsage() (float64, uint64, uint64, error) {
 }
 
 func (c *Collector) GetDiskUsage() (float64, uint64, uint64, error) {
-	usage, err := disk.Usage("/")
+	// 支持 Docker 环境：GWATCH_ROOTFS 指向宿主机根文件系统挂载点
+	rootPath := os.Getenv("GWATCH_ROOTFS")
+	if rootPath == "" {
+		rootPath = "/"
+	}
+	usage, err := disk.Usage(rootPath)
 	if err != nil {
 		return 0, 0, 0, err
 	}
