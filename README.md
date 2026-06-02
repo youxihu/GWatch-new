@@ -130,30 +130,40 @@ cp config/config_example.yml config/config.yml
 
 ```bash
 # 构建镜像
-make build
-docker build -t gwatch:4.0.1 .
+make docker                        # 相当于 make build + docker build
 
-# 运行容器
-docker run -d \
-  --name gwatch \
-  --pid=host \
-  --net=host \
-  -v /:/host:ro \
-  -v $(pwd)/config/config.yml:/etc/gwatch/config.yml:ro \
-  -e GWATCH_ROOTFS=/host \
-  gwatch:4.0.1
+# 或手动构建
+make build
+docker build -f docker/Dockerfile -t gwatch:4.0.1 .
+
+# 启动（推荐使用 docker-compose）
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-Docker 参数说明：
+部署参数说明：
 
 | 参数 | 作用 |
 |------|------|
-| `--pid=host` | 共享宿主机 PID 命名空间，使容器内 `/proc` 读取宿主机 CPU/内存/进程/磁盘 IO |
-| `--net=host` | 共享宿主机网络命名空间，使容器内 `/proc/net/dev` 读取宿主机网络流量 |
+| `pid: "host"` | 共享宿主机 PID 命名空间，使 `/proc` 读取宿主机 CPU/内存/进程/磁盘 IO |
+| `network_mode: "host"` | 共享宿主机网络命名空间，使 `/proc/net/dev` 读取宿主机网络流量 |
 | `-v /:/host:ro` | 挂载宿主机根文件系统到 `/host`，用于磁盘使用率采集 |
-| `-e GWATCH_ROOTFS=/host` | 环境变量指定磁盘使用率读取路径为宿主机挂载点 |
+| `GWATCH_ROOTFS=/host` | 环境变量指定磁盘使用率读取路径 |
 
----
+#### 容器部署陷阱
+
+**陷阱1：日志文件权限。** 容器默认以 root 运行，生成的日志文件属主为 `root:root`，宿主机无法读取。必须在 `docker-compose.yml` 中指定 `user: "1000:1000"` 匹配宿主机用户。
+
+**陷阱2：`log_path_template` 路径。** 配置文件中的日志路径必须使用容器内相对路径，不能写宿主机绝对路径：
+
+```yaml
+# ❌ 错误 — 容器内不存在此路径
+log_path_template: "/home/youxihu/GWatch/logs/alerts/%y/%m-%d/alert-%H%M-%S.md"
+
+# ✅ 正确 — 相对路径，解析后为 /app/acc/logs/alerts/...
+log_path_template: "logs/alerts/%y/%m-%d/alert-%H%M-%S.md"
+```
+
+详细排查步骤见 `docker/docker-compose.yml` 注释。
 
 ## 告警类型一览
 

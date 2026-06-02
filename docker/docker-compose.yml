@@ -1,0 +1,15 @@
+services:
+  gwatch:
+    image: gwatch:v4.0.1
+    container_name: gwatch
+    pid: "host"
+    network_mode: "host"
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      - GWATCH_ROOTFS=/host
+      - TZ=Asia/Shanghai
+    volumes:
+      - /:/host:ro
+      - ../config/config.yml:/app/acc/config.yml:ro
+      - ../logs:/app/acc/logs

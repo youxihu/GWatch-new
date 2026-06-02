@@ -25,6 +25,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	// 如果通过命令行参数指定了配置文件，提前设置到环境变量中
+	// 必须在 InitializeApp() 之前执行，因为 Wire 的 NewConfigProvider 会读取该环境变量
+	if configPath != "" {
+		os.Setenv("GWATCH_CONFIG", configPath)
+	}
+
 	// 1. 使用 Wire 进行依赖注入（需要先初始化，因为需要 logger）
 	app, err := InitializeApp()
 	if err != nil {
@@ -38,9 +44,7 @@ func main() {
 	// 初始化后，所有代码可以直接使用 logger.Info/Error/Warn/Debug 等全局函数进行日志记录
 	logger.InitLogWrapper(app.LoggerService.GetLogger())
 
-	// 如果通过命令行参数指定了配置文件，设置到环境变量中（这样 NewConfigProvider 可以读取）
 	if configPath != "" {
-		os.Setenv("GWATCH_CONFIG", configPath)
 		logger.Infof("使用配置文件: %s", configPath)
 	}
 
