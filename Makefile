@@ -80,6 +80,15 @@ docker:
 		.
 
 # ======================
+# Docker push
+# ======================
+docker_push:
+	docker buildx build \
+		-f docker/Dockerfile \
+		--platform linux/amd64,linux/arm64 \
+    	-t youxihu/gwatch:$(VERSION) --push .
+
+# ======================
 # 清理
 # ======================
 clean:
@@ -95,5 +104,6 @@ help:
 	@echo "  make wire     生成 wire 代码"
 	@echo "  make build    编译二进制"
 	@echo "  make docker   构建 Docker 镜像"
+	@echo "  make docker_push 推送跨平台镜像至docker.io仓库"
 	@echo "  make clean    清理产物"
 	@echo ""
