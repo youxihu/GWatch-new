@@ -1,6 +1,6 @@
 # GWatch — 通用型服务器监控系统
 
-[![Version](https://img.shields.io/badge/version-4.0.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-4.0.2-blue)](CHANGELOG.md)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -134,7 +134,7 @@ make docker                        # 相当于 make build + docker build
 
 # 或手动构建
 make build
-docker build -f docker/Dockerfile -t gwatch:4.0.1 .
+docker build -f docker/Dockerfile -t gwatch:4.0.2 .
 
 # 启动（推荐使用 docker-compose）
 docker compose -f docker/docker-compose.yml up -d

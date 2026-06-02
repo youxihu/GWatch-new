@@ -2,10 +2,15 @@
 
 ---
 
-## [4.0.1] - 2026-06-02
+## [4.0.2] - 2026-06-02
 
 ### 改进
-- Docker 部署文档完善：改用 docker-compose 方式，补充 `user: "1000:1000"` 权限陷阱和 `log_path_template` 容器路径陷阱
+- 构建系统重构：Makefile 增加版本变量、ldflags、UPX 压缩，新增 docker/clean 目标
+- cmd/main.go：修复配置环境变量设置时机（移到 Wire 初始化前）
+- Docker：Dockerfile 移至 docker/，优化镜像层，新增 docker-compose.yml
+- README：Docker 部署章节改用 docker-compose，补充 `user: "1000:1000"` 权限陷阱和 `log_path_template` 容器路径陷阱
+
+## [4.0.1] - 2026-06-01
 
 ### 新增
 - 主机监控：CPU / 内存 / 磁盘使用率实时采集，P1/P2/P3 三级阈值可独立配置
