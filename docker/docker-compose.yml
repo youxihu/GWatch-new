@@ -1,6 +1,6 @@
 services:
   gwatch:
-    image: gwatch:v4.0.2
+    image: yuoxihu/gwatch:v4.0.2
     container_name: gwatch
     pid: "host"
     network_mode: "host"

@@ -6,10 +6,13 @@ RUN apk add --no-cache ca-certificates tzdata \
     && mkdir -p /app/acc/logs
 
 ENV TZ=Asia/Shanghai
-
 WORKDIR /app/acc
 
-COPY ../bin/Gwatch ./GWatch
+# buildx 自动注入
+ARG TARGETARCH
+
+# 根据平台自动选择二进制
+COPY bin/linux_${TARGETARCH}/Gwatch ./GWatch
 
 ENTRYPOINT ["./GWatch"]
 CMD ["-c", "config.yml"]
