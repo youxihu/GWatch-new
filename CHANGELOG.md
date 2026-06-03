@@ -2,6 +2,27 @@
 
 ---
 
+## [Unreleased] - 2026-06-03
+
+### 修复
+- **Makefile**: 修复 LDFLAGS 路径错误，版本信息注入不生效
+- **HTTP 监控**: 修复 NeedAlert 字段未传递导致配置 `need_alert: true` 不生效的问题
+- **日志调度**: 修复 HTTP 接口日志在基础采集周期（5s）重复打印，改为仅在 HTTP 采集周期（30s）打印
+- **并发安全**: 修复 host_collector.go 包级全局变量竞态风险，封装到 Collector 结构体并加锁保护
+- **进程过滤**: 移除 process_utils.go 中硬编码的 "kiro" 进程名，改为通过 PID 排除自身进程
+- **HTTP 告警**: 修复 simple_evaluator.go 中 HTTP 监控只报告第一个异常接口的问题，支持同时报告所有异常接口
+- **主机名获取**: 修复 GetHostname 使用不可靠的 `net.LookupCNAME("")`，改用 `os.Hostname()`
+
+### 改进
+- **代码拆分**: 将 stateful_policy_engine.go 847行巨型函数拆分为 4 个职责清晰的文件（engine/recovery/state/emit）
+- **消除重复**: 提取 metrics_collect.go 中 Redis 采集公共方法，消除 CollectOnce 和 CollectBaseOnce 的重复代码
+- **消除重复**: 提取 wire.go 中 StatefulPolicy 创建公共方法，消除 NewBasePolicy 和 NewHTTPPolicy 的重复代码
+- **架构优化**: 修复 usecase 层直接依赖 infra logger 的层级违规，改为通过依赖注入使用 domain logger 接口
+- **死代码清理**: 删除未使用的 getTypeIndicator 和 AlertTypeRequiresConsecutive
+- **性能优化**: Redis AlertStateStorage 使用 Set 索引替代 KEYS 全量扫描，O(1) 查找替代 O(n) 扫描
+
+---
+
 ## [4.0.2] - 2026-06-02
 
 ### 改进

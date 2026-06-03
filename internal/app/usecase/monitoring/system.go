@@ -66,6 +66,7 @@ func (sms *SystemMetricsService) CollectFullMetrics(config *shared.Config) *enti
 				ResponseTime: responseTime,
 				StatusCode:   statusCode,
 				Error:        err,
+				NeedAlert:    httpConfig.NeedAlert,
 				AllowedCodes: httpConfig.AllowedCodes,
 			})
 		}

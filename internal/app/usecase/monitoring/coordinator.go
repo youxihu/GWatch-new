@@ -1,11 +1,12 @@
 package monitoring
 
 import (
+	"sync"
+	"time"
+
 	entity "github.com/youxihu/GWatch-new/internal/domain/entity/monitoring"
 	shared "github.com/youxihu/GWatch-new/internal/domain/entity/shared"
 	domainMonitor "github.com/youxihu/GWatch-new/internal/domain/monitoring"
-	"sync"
-	"time"
 )
 
 // Coordinator 负责在用例层承接调度、补采与合并通知的逻辑
@@ -132,10 +133,11 @@ func (c *Coordinator) runCycle(
 				_ = cc.runner.NotifyWithAlertResults(cfg, merged, results)
 				continue
 			}
-			cc.runner.PrintMetrics(cfg, merged)
 			if cc.isBase {
-				_ = c.runnerBase.EvaluateAndNotifyBaseOnly(cfg, merged)
+				cc.runner.PrintMetrics(cfg, primary)
+				_ = c.runnerBase.EvaluateAndNotifyBaseOnly(cfg, primary)
 			} else {
+				cc.runner.PrintMetrics(cfg, merged)
 				_ = c.runnerHTTP.EvaluateAndNotifyHTTPOnly(cfg, merged)
 			}
 		case <-stopCh:

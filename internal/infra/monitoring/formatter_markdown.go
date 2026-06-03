@@ -1,19 +1,19 @@
 package monitoring
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	entity "github.com/youxihu/GWatch-new/internal/domain/entity/monitoring"
 	shared "github.com/youxihu/GWatch-new/internal/domain/entity/shared"
 	"github.com/youxihu/GWatch-new/internal/domain/monitoring"
 	"github.com/youxihu/GWatch-new/internal/utils"
-	"fmt"
-	"strings"
-	"time"
 )
 
 type MarkdownFormatter struct{}
 
 func NewMarkdownFormatter() monitoring.Formatter { return &MarkdownFormatter{} }
-
 
 func (f *MarkdownFormatter) Build(title string, cfg *shared.Config, m *entity.SystemMetrics, alerts []monitoring.TriggeredAlert) string {
 	var text strings.Builder
@@ -261,20 +261,6 @@ func formatDiskUsageItems(items []monitoring.DiskUsageItem, maxItems int) string
 	}
 
 	return result.String()
-}
-
-
-
-// getTypeIndicator 根据类型获取标识
-func getTypeIndicator(itemType string) string {
-	switch itemType {
-	case "file":
-		return "[文件]" // 文件
-	case "directory":
-		return "[目录]" // 目录
-	default:
-		return "[未知]" // 未知类型
-	}
 }
 
 func redisStatusText(count int, cfg *shared.Config) string {

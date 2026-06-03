@@ -4,6 +4,10 @@
 package main
 
 import (
+	"os"
+	"os/signal"
+	"syscall"
+
 	usecaseBase "github.com/youxihu/GWatch-new/internal/app/usecase"
 	usecaseLogger "github.com/youxihu/GWatch-new/internal/app/usecase/logger"
 	usecaseMonitoring "github.com/youxihu/GWatch-new/internal/app/usecase/monitoring"
@@ -19,9 +23,6 @@ import (
 	"github.com/youxihu/GWatch-new/internal/domain/scheduled_push/client"
 	"github.com/youxihu/GWatch-new/internal/domain/scheduled_push/common"
 	"github.com/youxihu/GWatch-new/internal/domain/scheduled_push/server"
-	"os"
-	"os/signal"
-	"syscall"
 
 	// infra 实现
 	redisCollector "github.com/youxihu/GWatch-new/internal/infra/collector/external"
@@ -81,7 +82,6 @@ var ProviderSet = wire.NewSet(
 	NewHTTPMonitoringUseCase,
 	NewSecurityMonitoringService,
 
-	// 新增的提供者
 	NewClientDataRepository,
 	NewScheduledPushFormatter,
 	NewDataLogStorage,
@@ -146,8 +146,8 @@ func NewAlertStateStorage() monitoring.AlertStateStorage {
 	return monitoringImpl.NewAlertStateStorage()
 }
 
-// NewBasePolicy 创建基础告警策略
-func NewBasePolicy(alertStateStorage monitoring.AlertStateStorage, hostCollector collector.HostCollector, config *shared.Config) BasePolicy {
+// createStatefulPolicy 创建告警策略（公共方法）
+func createStatefulPolicy(alertStateStorage monitoring.AlertStateStorage, hostCollector collector.HostCollector, config *shared.Config) *monitoringImpl.StatefulPolicy {
 	policy := monitoringImpl.NewStatefulPolicy().(*monitoringImpl.StatefulPolicy)
 	policy.SetAlertStateStorage(alertStateStorage)
 	policy.SetHostCollector(hostCollector)
@@ -155,13 +155,14 @@ func NewBasePolicy(alertStateStorage monitoring.AlertStateStorage, hostCollector
 	return policy
 }
 
+// NewBasePolicy 创建基础告警策略
+func NewBasePolicy(alertStateStorage monitoring.AlertStateStorage, hostCollector collector.HostCollector, config *shared.Config) BasePolicy {
+	return createStatefulPolicy(alertStateStorage, hostCollector, config)
+}
+
 // NewHTTPPolicy 创建 HTTP 告警策略
 func NewHTTPPolicy(alertStateStorage monitoring.AlertStateStorage, hostCollector collector.HostCollector, config *shared.Config) HTTPPolicy {
-	policy := monitoringImpl.NewStatefulPolicy().(*monitoringImpl.StatefulPolicy)
-	policy.SetAlertStateStorage(alertStateStorage)
-	policy.SetHostCollector(hostCollector)
-	policy.SetConfig(config)
-	return policy
+	return createStatefulPolicy(alertStateStorage, hostCollector, config)
 }
 
 // InitializeApp 初始化应用程序的所有依赖
@@ -189,6 +190,7 @@ func NewBaseMonitoringUseCase(
 	formatter monitoring.Formatter,
 	notifier monitoring.Notifier,
 	alertLogStorage monitoring.AlertLogStorage,
+	log domainLogger.Logger,
 ) BaseMonitoringUseCase {
 	return usecaseMonitoring.NewMonitoringUseCase(
 		hostInfo,
@@ -199,6 +201,7 @@ func NewBaseMonitoringUseCase(
 		formatter,
 		notifier,
 		alertLogStorage,
+		log,
 	)
 }
 
@@ -212,6 +215,7 @@ func NewHTTPMonitoringUseCase(
 	formatter monitoring.Formatter,
 	notifier monitoring.Notifier,
 	alertLogStorage monitoring.AlertLogStorage,
+	log domainLogger.Logger,
 ) HTTPMonitoringUseCase {
 	return usecaseMonitoring.NewMonitoringUseCase(
 		hostInfo,
@@ -222,6 +226,7 @@ func NewHTTPMonitoringUseCase(
 		formatter,
 		notifier,
 		alertLogStorage,
+		log,
 	)
 }
 

@@ -51,3 +51,5 @@ config/config.yml
 *.bak
 *.swp
 *.swo
+
+TODO.list

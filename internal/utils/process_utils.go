@@ -1,10 +1,15 @@
 package utils
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/youxihu/GWatch-new/internal/domain/collector"
 	entity "github.com/youxihu/GWatch-new/internal/domain/entity/monitoring"
-	"fmt"
 )
+
+// selfPID 当前进程PID，用于排除自身
+var selfPID = int32(os.Getpid())
 
 // GetTopProcessInfo 获取Top进程的PID和名称（用于CPU或内存告警）
 func GetTopProcessInfo(hostCollector collector.HostCollector, alertType entity.AlertType) (string, string) {
@@ -12,7 +17,7 @@ func GetTopProcessInfo(hostCollector collector.HostCollector, alertType entity.A
 		return "default", ""
 	}
 
-	topCPUProcesses, topMemProcesses, err := hostCollector.GetTopProcesses(5) // 获取更多进程以便排除自身
+	topCPUProcesses, topMemProcesses, err := hostCollector.GetTopProcesses(5)
 	if err != nil {
 		return "default", ""
 	}
@@ -25,14 +30,12 @@ func GetTopProcessInfo(hostCollector collector.HostCollector, alertType entity.A
 		processes = topMemProcesses
 	}
 
-	// 查找第一个非 kiro 进程
 	for _, process := range processes {
-		if process.Name != "kiro" {
+		if process.PID != selfPID {
 			return fmt.Sprintf("%d", process.PID), process.Name
 		}
 	}
 
-	// 如果所有进程都是 kiro，返回第一个
 	if len(processes) > 0 {
 		topProcess := processes[0]
 		return fmt.Sprintf("%d", topProcess.PID), topProcess.Name
@@ -62,15 +65,12 @@ func GetTopProcessByType(hostCollector collector.HostCollector, alertType entity
 		return nil, fmt.Errorf("unsupported alert type: %s", alertType)
 	}
 
-	// 查找第一个非 kiro 进程
 	for i := range processes {
-		// 排除 kiro 进程本身，避免自我监控
-		if processes[i].Name != "kiro" {
+		if processes[i].PID != selfPID {
 			return &processes[i], nil
 		}
 	}
 
-	// 如果所有进程都是 kiro，返回第一个
 	if len(processes) > 0 {
 		return &processes[0], nil
 	}

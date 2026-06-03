@@ -45,26 +45,6 @@ var AlertTypeText = map[AlertType]string{
 	CertificateCheckErr: "HTTPS证书检查失败",
 }
 
-// AlertTypeRequiresConsecutive 是否需要"连续超标"才触发的类型（用于 shouldTriggerAlert）
-var AlertTypeRequiresConsecutive = map[AlertType]bool{
-	CPUHigh: true,
-	MemHigh: true,
-	HTTPErr: true,
-	// 其他错误类或瞬时类告警不需要连续触发
-	CPUErr:              false,
-	MemErr:              false,
-	DiskHigh:            false,
-	DiskErr:             false,
-	DiskIOReadHigh:      false,
-	DiskIOWriteHigh:     false,
-	RedisHigh:           false,
-	RedisLow:            false,
-	RedisErr:            false,
-	NetworkErr:          false,
-	CertificateExpiring: false,
-	CertificateCheckErr: false,
-}
-
 // 获取告警中文名
 func (a AlertType) String() string {
 	if text, exists := AlertTypeText[a]; exists {

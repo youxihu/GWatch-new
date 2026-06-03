@@ -88,16 +88,12 @@ func (s *SimpleEvaluator) Evaluate(cfg *shared.Config, metrics *entity.SystemMet
 			} else {
 				// 检查是否有需要告警的异常接口（基于配置的 need_alert 和 allowed_codes）
 				for _, httpInterface := range metrics.HTTP.Interfaces {
-					// 检查状态码是否在允许的范围内
 					isValidCode := utils.IsValidHTTPStatusCode(httpInterface.StatusCode, httpInterface.AllowedCodes)
 
-					// HTTP错误使用接口名称作为PID（用于区分不同接口的告警）
-					// 无论是否正常，都创建Decision，以便StatefulPolicy能够检测恢复
 					if httpInterface.NeedAlert {
-						// 如果状态码不在允许范围内，使用实际状态码；如果正常，使用200
 						statusCode := float64(httpInterface.StatusCode)
 						if isValidCode {
-							statusCode = 200.0 // 正常状态码统一为200，便于恢复检测
+							statusCode = 200.0
 						}
 						decisions = append(decisions, domainMonitor.Decision{
 							Type:         entity.HTTPErr,
@@ -105,7 +101,6 @@ func (s *SimpleEvaluator) Evaluate(cfg *shared.Config, metrics *entity.SystemMet
 							PID:          httpInterface.Name,
 							ProcessName:  "",
 						})
-						break // 只要有任何一个接口需要告警，就处理
 					}
 				}
 			}

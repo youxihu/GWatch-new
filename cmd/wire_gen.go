@@ -52,9 +52,11 @@ func InitializeApp() (*App, error) {
 	formatter := NewMarkdownFormatter()
 	notifier := NewDingTalkNotifier(provider)
 	alertLogStorage := NewAlertLogStorage()
-	baseMonitoringUseCase := NewBaseMonitoringUseCase(hostCollector, redisClient, httpCollector, evaluator, basePolicy, formatter, notifier, alertLogStorage)
+	loggerFactory := NewLoggerFactory(config)
+	logger := NewLogger(loggerFactory)
+	baseMonitoringUseCase := NewBaseMonitoringUseCase(hostCollector, redisClient, httpCollector, evaluator, basePolicy, formatter, notifier, alertLogStorage, logger)
 	httpPolicy := NewHTTPPolicy(alertStateStorage, hostCollector, config)
-	httpMonitoringUseCase := NewHTTPMonitoringUseCase(hostCollector, redisClient, httpCollector, evaluator, httpPolicy, formatter, notifier, alertLogStorage)
+	httpMonitoringUseCase := NewHTTPMonitoringUseCase(hostCollector, redisClient, httpCollector, evaluator, httpPolicy, formatter, notifier, alertLogStorage, logger)
 	coordinator := NewCoordinator(baseMonitoringUseCase, httpMonitoringUseCase, basePolicy, httpPolicy)
 	metricsCollector := NewMetricsCollector(hostCollector, redisClient, httpCollector)
 	clientDataRepository := NewClientDataRepository()
@@ -64,8 +66,6 @@ func InitializeApp() (*App, error) {
 	serverUseCase := NewServerUseCase(metricsCollector, clientDataRepository, scheduledPushFormatter, notifier, scheduledPushDataLogStorage)
 	scheduledPushUseCase := NewScheduledPushUseCase(clientUseCase, serverUseCase)
 	scheduledPushScheduler := NewScheduledPushScheduler(scheduledPushUseCase)
-	loggerFactory := NewLoggerFactory(config)
-	logger := NewLogger(loggerFactory)
 	loggerService := NewLoggerService(logger)
 	certificateFetcher := NewCertificateFetcher()
 	service := NewSecurityMonitoringService(notifier, alertStateStorage, certificateFetcher)
@@ -176,8 +176,8 @@ func NewAlertStateStorage() monitoring3.AlertStateStorage {
 	return monitoring.NewAlertStateStorage()
 }
 
-// NewBasePolicy 创建基础告警策略
-func NewBasePolicy(alertStateStorage monitoring3.AlertStateStorage, hostCollector collector.HostCollector, config2 *entity.Config) BasePolicy {
+// createStatefulPolicy 创建告警策略（公共方法）
+func createStatefulPolicy(alertStateStorage monitoring3.AlertStateStorage, hostCollector collector.HostCollector, config2 *entity.Config) *monitoring.StatefulPolicy {
 	policy := monitoring.NewStatefulPolicy().(*monitoring.StatefulPolicy)
 	policy.SetAlertStateStorage(alertStateStorage)
 	policy.SetHostCollector(hostCollector)
@@ -185,13 +185,14 @@ func NewBasePolicy(alertStateStorage monitoring3.AlertStateStorage, hostCollecto
 	return policy
 }
 
+// NewBasePolicy 创建基础告警策略
+func NewBasePolicy(alertStateStorage monitoring3.AlertStateStorage, hostCollector collector.HostCollector, config2 *entity.Config) BasePolicy {
+	return createStatefulPolicy(alertStateStorage, hostCollector, config2)
+}
+
 // NewHTTPPolicy 创建 HTTP 告警策略
 func NewHTTPPolicy(alertStateStorage monitoring3.AlertStateStorage, hostCollector collector.HostCollector, config2 *entity.Config) HTTPPolicy {
-	policy := monitoring.NewStatefulPolicy().(*monitoring.StatefulPolicy)
-	policy.SetAlertStateStorage(alertStateStorage)
-	policy.SetHostCollector(hostCollector)
-	policy.SetConfig(config2)
-	return policy
+	return createStatefulPolicy(alertStateStorage, hostCollector, config2)
 }
 
 // NewBaseMonitoringUseCase 创建基础监控用例
@@ -204,6 +205,7 @@ func NewBaseMonitoringUseCase(
 	formatter monitoring3.Formatter,
 	notifier monitoring3.Notifier,
 	alertLogStorage monitoring3.AlertLogStorage,
+	log logger.Logger,
 ) BaseMonitoringUseCase {
 	return monitoring2.NewMonitoringUseCase(
 		hostInfo,
@@ -214,6 +216,7 @@ func NewBaseMonitoringUseCase(
 		formatter,
 		notifier,
 		alertLogStorage,
+		log,
 	)
 }
 
@@ -227,6 +230,7 @@ func NewHTTPMonitoringUseCase(
 	formatter monitoring3.Formatter,
 	notifier monitoring3.Notifier,
 	alertLogStorage monitoring3.AlertLogStorage,
+	log logger.Logger,
 ) HTTPMonitoringUseCase {
 	return monitoring2.NewMonitoringUseCase(
 		hostInfo,
@@ -237,6 +241,7 @@ func NewHTTPMonitoringUseCase(
 		formatter,
 		notifier,
 		alertLogStorage,
+		log,
 	)
 }
 

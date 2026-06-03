@@ -1,16 +1,17 @@
 package monitoring
 
 import (
-	monitoringEntity "github.com/youxihu/GWatch-new/internal/domain/entity/monitoring"
-	shared "github.com/youxihu/GWatch-new/internal/domain/entity/shared"
-	"github.com/youxihu/GWatch-new/internal/domain/monitoring"
-	logger "github.com/youxihu/GWatch-new/internal/infra/logger"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	monitoringEntity "github.com/youxihu/GWatch-new/internal/domain/entity/monitoring"
+	shared "github.com/youxihu/GWatch-new/internal/domain/entity/shared"
+	"github.com/youxihu/GWatch-new/internal/domain/monitoring"
+	logger "github.com/youxihu/GWatch-new/internal/infra/logger"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -125,10 +126,18 @@ func (s *AlertStateStorageImpl) DeleteAlertStateByEventID(eventID string) error 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 使用新格式的key直接删除
+	// 先获取状态，用于删除索引
+	state, _ := s.GetAlertStateByEventID(eventID)
+
+	// 删除主key
 	newKey := s.getRedisKeyByEventID(eventID)
 	if err := s.client.Del(ctx, newKey).Err(); err != nil {
 		return fmt.Errorf("删除告警状态失败: %v", err)
+	}
+
+	// 删除索引
+	if state != nil {
+		s.removeIndexes(ctx, state)
 	}
 
 	return nil
@@ -249,6 +258,76 @@ func (s *AlertStateStorageImpl) getRedisKeyByEventID(eventID string) string {
 	return fmt.Sprintf("gwatch:alert:%s:%s", hostID, eventID)
 }
 
+// getTypeIndexKey 获取告警类型索引key
+func (s *AlertStateStorageImpl) getTypeIndexKey(alertType monitoringEntity.AlertType) string {
+	hostID := s.getHostID()
+	return fmt.Sprintf("gwatch:alert:type:%s:%s", hostID, alertType)
+}
+
+// getProcessIndexKey 获取进程名索引key
+func (s *AlertStateStorageImpl) getProcessIndexKey(alertType monitoringEntity.AlertType, processName string) string {
+	hostID := s.getHostID()
+	return fmt.Sprintf("gwatch:alert:proc:%s:%s:%s", hostID, alertType, processName)
+}
+
+// addIndexes 添加告警索引
+func (s *AlertStateStorageImpl) addIndexes(ctx context.Context, state *monitoring.AlertState) {
+	hostID := s.getHostID()
+	ttl := s.getRetentionTTL()
+
+	// 添加告警类型索引
+	typeIndexKey := s.getTypeIndexKey(state.AlertType)
+	s.client.SAdd(ctx, typeIndexKey, state.EventID)
+	s.client.Expire(ctx, typeIndexKey, ttl)
+
+	// 添加进程名索引（每个进程一个索引）
+	for _, proc := range state.Processes {
+		if proc.ProcessName != "" {
+			procIndexKey := s.getProcessIndexKey(state.AlertType, proc.ProcessName)
+			s.client.SAdd(ctx, procIndexKey, state.EventID)
+			s.client.Expire(ctx, procIndexKey, ttl)
+		}
+	}
+
+	// 维护主机级别的eventID列表（用于GetAllAlertStates）
+	hostIndexKey := fmt.Sprintf("gwatch:alert:all:%s", hostID)
+	s.client.SAdd(ctx, hostIndexKey, state.EventID)
+	s.client.Expire(ctx, hostIndexKey, ttl)
+}
+
+// removeIndexes 删除告警索引
+func (s *AlertStateStorageImpl) removeIndexes(ctx context.Context, state *monitoring.AlertState) {
+	hostID := s.getHostID()
+
+	// 删除告警类型索引
+	typeIndexKey := s.getTypeIndexKey(state.AlertType)
+	s.client.SRem(ctx, typeIndexKey, state.EventID)
+
+	// 删除进程名索引
+	for _, proc := range state.Processes {
+		if proc.ProcessName != "" {
+			procIndexKey := s.getProcessIndexKey(state.AlertType, proc.ProcessName)
+			s.client.SRem(ctx, procIndexKey, state.EventID)
+		}
+	}
+
+	// 从主机级别索引中移除
+	hostIndexKey := fmt.Sprintf("gwatch:alert:all:%s", hostID)
+	s.client.SRem(ctx, hostIndexKey, state.EventID)
+}
+
+// getRetentionTTL 获取保留时间
+func (s *AlertStateStorageImpl) getRetentionTTL() time.Duration {
+	retentionHours := 24 // 默认24小时
+	if s.config != nil && s.config.Alerting != nil {
+		retentionHours = s.config.Alerting.Event.RetentionHours
+	}
+	if retentionHours <= 0 {
+		retentionHours = 24
+	}
+	return time.Duration(retentionHours) * time.Hour
+}
+
 // SetAlertStateByEventID 使用事件ID设置告警状态
 func (s *AlertStateStorageImpl) SetAlertStateByEventID(state *monitoring.AlertState) error {
 	if err := s.ensureConnected(); err != nil {
@@ -265,19 +344,13 @@ func (s *AlertStateStorageImpl) SetAlertStateByEventID(state *monitoring.AlertSt
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 设置过期时间（根据配置的retention_hours）
-	retentionHours := 24 // 默认24小时
-	if s.config != nil && s.config.Alerting != nil {
-		retentionHours = s.config.Alerting.Event.RetentionHours
-	}
-	if retentionHours <= 0 {
-		retentionHours = 24
-	}
-
-	ttl := time.Duration(retentionHours) * time.Hour
+	ttl := s.getRetentionTTL()
 	if err := s.client.Set(ctx, key, data, ttl).Err(); err != nil {
 		return fmt.Errorf("设置告警状态失败: %v", err)
 	}
+
+	// 添加索引
+	s.addIndexes(ctx, state)
 
 	return nil
 }
@@ -296,34 +369,28 @@ func (s *AlertStateStorageImpl) GetAllAlertStates() ([]*monitoring.AlertState, e
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 获取所有匹配的key（只获取当前主机的key）
+	// 使用索引获取所有eventID
 	hostID := s.getHostID()
-	pattern := fmt.Sprintf("gwatch:alert:%s:*", hostID)
-	keys, err := s.client.Keys(ctx, pattern).Result()
+	hostIndexKey := fmt.Sprintf("gwatch:alert:all:%s", hostID)
+	eventIDs, err := s.client.SMembers(ctx, hostIndexKey).Result()
 	if err != nil {
-		return nil, fmt.Errorf("获取告警状态keys失败: %v", err)
+		return nil, fmt.Errorf("获取告警状态索引失败: %v", err)
 	}
 
 	var states []*monitoring.AlertState
-	for _, key := range keys {
-		val, err := s.client.Get(ctx, key).Result()
-		if err != nil {
+	for _, eventID := range eventIDs {
+		state, err := s.GetAlertStateByEventID(eventID)
+		if err != nil || state == nil {
 			continue // 跳过获取失败的key
 		}
-
-		var state monitoring.AlertState
-		if err := json.Unmarshal([]byte(val), &state); err != nil {
-			continue // 跳过解析失败的key
-		}
-
-		states = append(states, &state)
+		states = append(states, state)
 	}
 
 	return states, nil
 }
 
 // GetAlertStateByType 获取指定告警类型的第一个告警状态
-// 用于恢复检测时，当PID不匹配时查找所有相关状态
+// 使用索引快速查找，避免KEYS扫描
 func (s *AlertStateStorageImpl) GetAlertStateByType(alertType monitoringEntity.AlertType) (*monitoring.AlertState, error) {
 	if err := s.ensureConnected(); err != nil {
 		return nil, err
@@ -332,29 +399,18 @@ func (s *AlertStateStorageImpl) GetAlertStateByType(alertType monitoringEntity.A
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 获取所有匹配的key
-	hostID := s.getHostID()
-	pattern := fmt.Sprintf("gwatch:alert:%s:*", hostID)
-	keys, err := s.client.Keys(ctx, pattern).Result()
+	// 使用索引获取该类型的所有eventID
+	typeIndexKey := s.getTypeIndexKey(alertType)
+	eventIDs, err := s.client.SMembers(ctx, typeIndexKey).Result()
 	if err != nil {
-		return nil, fmt.Errorf("获取告警状态keys失败: %v", err)
+		return nil, fmt.Errorf("获取告警类型索引失败: %v", err)
 	}
 
-	// 遍历所有key，查找指定告警类型的状态
-	for _, key := range keys {
-		val, err := s.client.Get(ctx, key).Result()
-		if err != nil {
-			continue // 跳过获取失败的key
-		}
-
-		var state monitoring.AlertState
-		if err := json.Unmarshal([]byte(val), &state); err != nil {
-			continue // 跳过解析失败的key
-		}
-
-		// 检查告警类型是否匹配
-		if state.AlertType == alertType {
-			return &state, nil
+	// 返回第一个有效的状态
+	for _, eventID := range eventIDs {
+		state, err := s.GetAlertStateByEventID(eventID)
+		if err == nil && state != nil {
+			return state, nil
 		}
 	}
 
@@ -362,7 +418,7 @@ func (s *AlertStateStorageImpl) GetAlertStateByType(alertType monitoringEntity.A
 }
 
 // GetAlertStateByProcessName 根据进程名查找相同告警类型的告警状态
-// 用于多进程场景：相同进程名的告警应该合并为一个事件
+// 使用索引快速查找，避免KEYS扫描
 func (s *AlertStateStorageImpl) GetAlertStateByProcessName(alertType monitoringEntity.AlertType, processName string) (*monitoring.AlertState, error) {
 	if err := s.ensureConnected(); err != nil {
 		return nil, err
@@ -375,35 +431,20 @@ func (s *AlertStateStorageImpl) GetAlertStateByProcessName(alertType monitoringE
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// 获取所有匹配的key
-	hostID := s.getHostID()
-	pattern := fmt.Sprintf("gwatch:alert:%s:*", hostID)
-	keys, err := s.client.Keys(ctx, pattern).Result()
+	// 使用索引获取该进程名的所有eventID
+	procIndexKey := s.getProcessIndexKey(alertType, processName)
+	eventIDs, err := s.client.SMembers(ctx, procIndexKey).Result()
 	if err != nil {
-		return nil, fmt.Errorf("获取告警状态keys失败: %v", err)
+		return nil, fmt.Errorf("获取进程索引失败: %v", err)
 	}
 
-	// 遍历所有key，查找相同告警类型和进程名的告警状态
-	for _, key := range keys {
-		val, err := s.client.Get(ctx, key).Result()
-		if err != nil {
-			continue // 跳过获取失败的key
-		}
-
-		var state monitoring.AlertState
-		if err := json.Unmarshal([]byte(val), &state); err != nil {
-			continue // 跳过解析失败的key
-		}
-
-		// 检查告警类型是否匹配
-		if state.AlertType != alertType {
-			continue
-		}
-
-		// 检查是否有相同进程名的进程
-		for _, proc := range state.Processes {
-			if proc.ProcessName == processName {
-				return &state, nil
+	// 返回第一个有效的状态
+	for _, eventID := range eventIDs {
+		state, err := s.GetAlertStateByEventID(eventID)
+		if err == nil && state != nil {
+			// 验证告警类型是否匹配（索引可能有延迟）
+			if state.AlertType == alertType {
+				return state, nil
 			}
 		}
 	}
@@ -444,53 +485,9 @@ func (s *AlertStateStorageImpl) EventIDExists(eventID string) (bool, error) {
 }
 
 // FindExistingEventByProcess 根据告警类型和进程名查找现有事件ID
-// 用于事件ID复用：相同进程名的告警应该使用相同的事件ID
+// 使用索引快速查找，避免KEYS扫描
 func (s *AlertStateStorageImpl) FindExistingEventByProcess(alertType monitoringEntity.AlertType, processName string) (*monitoring.AlertState, error) {
-	if err := s.ensureConnected(); err != nil {
-		return nil, err
-	}
-
-	if processName == "" {
-		return nil, nil // 没有进程名，无法查找
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	// 获取所有匹配的key（只获取当前主机的key）
-	hostID := s.getHostID()
-	pattern := fmt.Sprintf("gwatch:alert:%s:*", hostID)
-	keys, err := s.client.Keys(ctx, pattern).Result()
-	if err != nil {
-		return nil, fmt.Errorf("获取告警状态keys失败: %v", err)
-	}
-
-	// 遍历所有key，查找相同告警类型和进程名的事件
-	for _, key := range keys {
-		val, err := s.client.Get(ctx, key).Result()
-		if err != nil {
-			continue // 跳过获取失败的key
-		}
-
-		var state monitoring.AlertState
-		if err := json.Unmarshal([]byte(val), &state); err != nil {
-			continue // 跳过解析失败的key
-		}
-
-		// 检查告警类型是否匹配
-		if state.AlertType != alertType {
-			continue
-		}
-
-		// 检查是否有相同进程名的进程
-		for _, proc := range state.Processes {
-			if proc.ProcessName == processName {
-				return &state, nil
-			}
-		}
-	}
-
-	return nil, nil // 未找到匹配的事件
+	return s.GetAlertStateByProcessName(alertType, processName)
 }
 
 // FindExistingEventByProcessForEventID 根据告警类型和进程名查找现有事件ID（实现EventIDFinder接口）
@@ -529,7 +526,7 @@ func (s *AlertStateStorageImpl) FindExistingEventByProcessForEventID(alertType s
 }
 
 // FindActiveEventsByType 根据告警类型查找所有活跃事件
-// 用于事件生命周期管理和统计
+// 使用索引快速查找，避免KEYS扫描
 func (s *AlertStateStorageImpl) FindActiveEventsByType(alertType monitoringEntity.AlertType) ([]*monitoring.AlertState, error) {
 	if err := s.ensureConnected(); err != nil {
 		return nil, err
@@ -538,31 +535,20 @@ func (s *AlertStateStorageImpl) FindActiveEventsByType(alertType monitoringEntit
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 获取所有匹配的key（只获取当前主机的key）
-	hostID := s.getHostID()
-	pattern := fmt.Sprintf("gwatch:alert:%s:*", hostID)
-	keys, err := s.client.Keys(ctx, pattern).Result()
+	// 使用索引获取该类型的所有eventID
+	typeIndexKey := s.getTypeIndexKey(alertType)
+	eventIDs, err := s.client.SMembers(ctx, typeIndexKey).Result()
 	if err != nil {
-		return nil, fmt.Errorf("获取告警状态keys失败: %v", err)
+		return nil, fmt.Errorf("获取告警类型索引失败: %v", err)
 	}
 
 	var activeEvents []*monitoring.AlertState
 
-	// 遍历所有key，查找指定类型的活跃事件
-	for _, key := range keys {
-		val, err := s.client.Get(ctx, key).Result()
-		if err != nil {
-			continue // 跳过获取失败的key
-		}
-
-		var state monitoring.AlertState
-		if err := json.Unmarshal([]byte(val), &state); err != nil {
-			continue // 跳过解析失败的key
-		}
-
-		// 检查告警类型是否匹配
-		if state.AlertType == alertType {
-			activeEvents = append(activeEvents, &state)
+	// 获取所有有效状态
+	for _, eventID := range eventIDs {
+		state, err := s.GetAlertStateByEventID(eventID)
+		if err == nil && state != nil && state.AlertType == alertType {
+			activeEvents = append(activeEvents, state)
 		}
 	}
 
@@ -622,16 +608,7 @@ func (s *AlertStateStorageImpl) CleanupExpiredEvents() error {
 	now := time.Now()
 	cleanupCount := 0
 
-	// 清理超过保留时间的已恢复事件
-	retentionHours := 24 // 默认24小时
-	if s.config != nil && s.config.Alerting != nil {
-		retentionHours = s.config.Alerting.Event.RetentionHours
-	}
-	if retentionHours <= 0 {
-		retentionHours = 24
-	}
-
-	retentionDuration := time.Duration(retentionHours) * time.Hour
+	retentionDuration := s.getRetentionTTL()
 
 	for _, state := range states {
 		// 检查事件是否已过期（基于最后更新时间）

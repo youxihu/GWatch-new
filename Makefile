@@ -17,10 +17,10 @@ GOARCH      ?= amd64
 CGO_ENABLED ?= 0
 
 LDFLAGS := -s -w \
-	-X 'GWatch/internal/utils.Version=$(VERSION)' \
-	-X 'GWatch/internal/utils.GitCommit=$(GIT_COMMIT)' \
-	-X 'GWatch/internal/utils.GitAuthor=$(GIT_AUTHOR)' \
-	-X 'GWatch/internal/utils.BuildTime=$(BUILD_TIME)'
+	-X 'github.com/youxihu/GWatch-new/internal/utils.Version=$(VERSION)' \
+	-X 'github.com/youxihu/GWatch-new/internal/utils.GitCommit=$(GIT_COMMIT)' \
+	-X 'github.com/youxihu/GWatch-new/internal/utils.GitAuthor=$(GIT_AUTHOR)' \
+	-X 'github.com/youxihu/GWatch-new/internal/utils.BuildTime=$(BUILD_TIME)'
 
 all: help
 
